@@ -21,7 +21,7 @@ html, body {
 .map-container {
   position: relative;
   width: 100%;
-  height: 100%; }
+  height: calc(100% - 60px); }
 
 #map {
   position: absolute;
@@ -42,3 +42,35 @@ html, body {
   width: 100%;
   height: 100%;
   pointer-events: none; }
+
+.fixbar {
+  z-index: 4;
+  position: fixed;
+  bottom: 0px;
+  left: 0px;
+  height: 60px;
+  width: 100%;
+  background-color: #323232;
+  color: white; }
+  .fixbar input[type="range"] {
+    margin: 0px 10px;
+    padding: 10px;
+    position: relative;
+    top: 10px;
+    width: 400px;
+    max-width: calc(100% - 80px); }
+  .fixbar #timeInfo {
+    display: inline-block;
+    font-size: 0.75em;
+    position: relative;
+    top: -5px;
+    width: 100px; }
+  .fixbar .bt {
+    display: inline-block;
+    padding: 5px 10px;
+    cursor: pointer;
+    width: 60px;
+    background-color: #646464;
+    color: white; }
+    .fixbar .bt:hover {
+      background-color: #969696; }
