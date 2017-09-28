@@ -4,8 +4,10 @@ var g_CurField;
 var g_DrawField = false;
 var g_Particle;
 const MAX_PARTICLE = 1000;
-const MAX_AGE = 50;
+const MAX_AGE = 100;
 const POS_LEN = 10;
+const STEP_LEN = 5;
+const LINE_WIDTH = 1;
 
 var g_FieldColor = d3.scale.linear()
 	.domain([0,2,4,6,8,10,12,14,16,18,20,24,27,29])
@@ -122,9 +124,9 @@ function GetField(lat,lng){
 	if(lng1 < g_CurField.header.lo1 || lng1 > g_CurField.header.lo2) return null;
 	if(lng2 < g_CurField.header.lo1 || lng2 > g_CurField.header.lo2) return null;
 	var v0 = g_CurField.data[lng1][lat1];
-	var v1 = g_CurField.data[lng2][lat1];
+	var v1 = g_CurField.data[lng1][lat2];
 	var v2 = g_CurField.data[lng2][lat2];
-	var v3 = g_CurField.data[lng1][lat2];
+	var v3 = g_CurField.data[lng2][lat1];
 	var alpha = 1-(lat-lat1);
 	var beta = 1-(lng-lng1);
 	var w0 = {};
@@ -245,10 +247,12 @@ function UpdateParticle(){
 			g_Particle[i] = CreateParticle(bound);
 			continue;
 		}
-		for(var j=POS_LEN-1;j>0;j--){
-			p.pos[j] = p.pos[j-1];
+		if(parseInt(p.age) % STEP_LEN == 0){
+			for(var j=POS_LEN-1;j>0;j--){
+				p.pos[j] = p.pos[j-1];
+			}
 		}
-		var newPos = {lat: p.pos[0].lat+wind.v*windScale, lng: p.pos[0].lng+wind.u*windScale};
+		var newPos = {lat: pos.lat+wind.v*windScale, lng: pos.lng+wind.u*windScale};
 		p.pos[0] = newPos;
 		p.age++;
 		if(p.age >= MAX_AGE){	//delete old particle & create new
@@ -269,6 +273,49 @@ function DrawParticle(){
 	var bl = proj.fromLatLngToPoint(sw);
 	var scale = Math.pow(2, g_Map.getZoom());
 
+	var canvas = $("#windCanvas");
+	var w = canvas.width();
+	var h = canvas.height();
+	var ctx = canvas[0].getContext("2d");
+	ctx.clearRect(0, 0, w, h);
+
+
+	for(var i=0;i<MAX_PARTICLE;i++){
+		var p = g_Particle[i];
+
+		var pathArr = [];
+		var skip = false;
+		for(var j=0;j<POS_LEN;j++){
+			var point = new google.maps.LatLng(p.pos[j].lat,p.pos[j].lng);
+			var pt = proj.fromLatLngToPoint(point);
+			if(p.pos[j].lng >= 180){	//超過投影平面邊界
+				skip = true;
+				break;
+			}
+			var x = (pt.x-bl.x)*scale;
+			var y = (pt.y-tr.y)*scale;
+			pathArr.push({x:x, y:y});
+		}
+		if(skip) continue;
+		var firstPt = pathArr[0];
+		var lastPt = pathArr[POS_LEN-1];
+		var gradient = ctx.createLinearGradient(firstPt.x,firstPt.y,lastPt.x,lastPt.y);
+		gradient.addColorStop("0","rgba(255,255,255,0.8)");
+		gradient.addColorStop("1","rgba(255,255,255,0)");
+
+		ctx.strokeStyle = gradient;
+		ctx.lineWidth = LINE_WIDTH;
+		ctx.beginPath();
+		ctx.moveTo(firstPt.x,firstPt.y);
+		for(var j=1;j<pathArr.length;j++){
+			ctx.lineTo(pathArr[j].x,pathArr[j].y);
+		}
+		ctx.stroke();
+			
+	}
+
+	/*
+	//draw particle in svg (slow)
 	var svgParticle = d3.select("#windParticle");
 	svgParticle.selectAll("*").remove();
 	for(var i=0;i<MAX_PARTICLE;i++){
@@ -298,10 +345,18 @@ function DrawParticle(){
 			.attr("fill","None")
 			.attr("stroke","url(#whiteGradient)");
 			
-	}
+	}*/
 }
 
 //=========================================================
+function ResizeCanvas(){
+	var canvas = $("#windCanvas");
+	var w = canvas.width();
+	var h = canvas.height();
+	canvas[0].width = w;
+	canvas[0].height = h;
+}
+
 function InitMap() {
 	var taiwan = new google.maps.LatLng(23.682094,120.7764642);
 
@@ -337,6 +392,7 @@ function InitMap() {
 		DrawWindField();
 	});
 	
+	ResizeCanvas();
 	LoadFieldData();
 }
 

@@ -13,7 +13,7 @@ function UpdateTime(val){
 	var id2 = id1+1;
 	var alpha = (val-(id1*36-24))/36;	//index轉回分鐘相減，再算佔6小時的比例
 	InterpolateField(id1, id2, alpha);
-	UpdateWindGrid();
+	DrawWindField();
 }
 
 function Play(){
@@ -42,9 +42,12 @@ function Stop(){
 	g_TimerID = null;
 }
 
+window.addEventListener("resize", ResizeCanvas);
+
 window.addEventListener('load', function() {
 	$("#timeBar").change(function(){
 		var val = parseInt($("#timeBar").val());
 		UpdateTime(val);
 	});
+
 });
