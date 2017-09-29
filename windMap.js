@@ -3,10 +3,10 @@ var g_Field;
 var g_CurField;
 var g_DrawField = false;
 var g_Particle;
-const MAX_PARTICLE = 1000;
-const MAX_AGE = 100;
-const POS_LEN = 10;
-const STEP_LEN = 5;
+const MAX_PARTICLE = 2000;
+const MAX_AGE = 200;
+const POS_LEN = 5;
+const STEP_LEN = 10;
 const LINE_WIDTH = 1;
 
 var g_FieldColor = d3.scale.linear()
@@ -107,6 +107,7 @@ function InterpolateField(id1, id2, alpha){
 			d2 = field2.data[i+lo1][j+la1];
 			var value = {u: d1.u*(1-alpha)+d2.u*alpha, v: d1.v*(1-alpha)+d2.v*alpha, i:i, j:j};
 			value.mag = Math.sqrt(value.u*value.u+value.v*value.v);
+			value.theta = Math.tan2(value.v, value.u);
 			g_CurField.data[i+lo1][j+la1] = value;
 		}
 	}
@@ -147,6 +148,13 @@ function DrawWindField(){
 
 	var svgField = d3.select("#windField");
 	svgField.selectAll("*").remove();
+
+	var canvas = $("#fieldCanvas");
+	var w = canvas.width();
+	var h = canvas.height();
+	var ctx = canvas[0].getContext("2d");
+	ctx.clearRect(0, 0, w, h);
+
 	if(!g_DrawField) return;
 	
 	var proj = g_Map.getProjection();
@@ -164,6 +172,36 @@ function DrawWindField(){
 
 	var la1 = g_CurField.header.la1;
 	var lo1 = g_CurField.header.lo1;
+
+	for(var j=0;j<g_CurField.header.ny;j++){
+		for(var i=0;i<g_CurField.header.nx;i++){
+			var index = j*g_CurField.header.nx+i;
+			var wind = g_CurField.data[i+lo1][j+la1];
+			var lat = g_CurField.header.la1+g_CurField.header.dy*j;
+			var lng = g_CurField.header.lo1+g_CurField.header.dx*i;
+			var lat2 = lat+wind.v*windScale;
+			var lng2 = lng+wind.u*windScale;
+			if(lng2 >= 180) continue;	//超過投影平面邊界
+			var point = new google.maps.LatLng(lat,lng);
+			var point2 = new google.maps.LatLng(lat2, lng2);
+    		var pt = proj.fromLatLngToPoint(point);
+    		var pt2 = proj.fromLatLngToPoint(point2);
+    		var x = (pt.x-bl.x)*scale;
+    		var y = (pt.y-tr.y)*scale;
+    		var x2 = (pt2.x-bl.x)*scale;
+    		var y2 = (pt2.y-tr.y)*scale;
+
+    		ctx.strokeStyle = g_FieldColor(wind.mag);
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.moveTo(x,y);
+			ctx.lineTo(x2,y2);
+			ctx.stroke();
+		}
+	}
+
+	/*
+	//draw by svg (slow)
 	for(var j=0;j<g_CurField.header.ny;j++){
 		for(var i=0;i<g_CurField.header.nx;i++){
 			var index = j*g_CurField.header.nx+i;
@@ -185,7 +223,7 @@ function DrawWindField(){
     		svgField.append("line").attr("x1",x).attr("x2",x2)
     			.attr("y1",y).attr("y2",y2).attr("stroke",g_FieldColor(wind.mag));
 		}
-	}
+	}*/
 }
 
 //======================particle===========================
@@ -194,6 +232,8 @@ function CreateParticle(bound){
 	var lngRange = bound.maxLng-bound.minLng;
 	var particle = {};
 	particle.age = Math.random()*MAX_AGE;
+	particle.mag = 0;
+	particle.vel = {u:0,v:0};
 	particle.pos = [];
 	var pos = {lat: Math.random()*latRange+bound.minLat, lng: Math.random()*lngRange+bound.minLng};
 	for(var i=0;i<POS_LEN;i++){
@@ -213,10 +253,12 @@ function GetBound(){
 	if(mapBound){
 		ne = mapBound.getNorthEast();
 		sw = mapBound.getSouthWest();
-		if(sw.lat() > bound.minLat) bound.minLat = sw.lat();
-		if(ne.lat() < bound.maxLat) bound.maxLat = ne.lat();
-		if(ne.lng() > bound.minLng) bound.minLng = ne.lng();
-		if(sw.lng() < bound.maxLng) bound.maxLng = sw.lng();
+		if(ne.lng() > sw.lng()){	//沒跨換日線
+			if(sw.lat() > bound.minLat) bound.minLat = sw.lat();
+			if(ne.lat() < bound.maxLat) bound.maxLat = ne.lat();
+			if(sw.lng() > bound.minLng) bound.minLng = sw.lng();
+			if(ne.lng() < bound.maxLng) bound.maxLng = ne.lng();
+		}
 	}
 	return bound;
 }
@@ -236,7 +278,8 @@ function UpdateParticle(){
 	var bound = GetBound();
 	if(!bound) return;
 	var scale = Math.pow(2, g_Map.getZoom());
-	var windScale = 0.5/scale;
+	var windScale = 0.3/scale;
+	var mu = 0.95;
 
 	for(var i=0;i<MAX_PARTICLE;i++){
 		var p = g_Particle[i];
@@ -252,7 +295,10 @@ function UpdateParticle(){
 				p.pos[j] = p.pos[j-1];
 			}
 		}
-		var newPos = {lat: pos.lat+wind.v*windScale, lng: pos.lng+wind.u*windScale};
+		var vel = {u: p.vel.u*mu+wind.u*(1-mu), v: p.vel.v*mu+wind.v*(1-mu)};
+		var newPos = {lat: pos.lat+vel.v*windScale, lng: pos.lng+vel.u*windScale};
+		p.mag = wind.mag;
+		p.vel = wind;
 		p.pos[0] = newPos;
 		p.age++;
 		if(p.age >= MAX_AGE){	//delete old particle & create new
@@ -300,7 +346,9 @@ function DrawParticle(){
 		var firstPt = pathArr[0];
 		var lastPt = pathArr[POS_LEN-1];
 		var gradient = ctx.createLinearGradient(firstPt.x,firstPt.y,lastPt.x,lastPt.y);
-		gradient.addColorStop("0","rgba(255,255,255,0.8)");
+		//var opacity = Math.min(p.mag*0.1, 1);
+		var opacity = 1-p.age/MAX_AGE;
+		gradient.addColorStop("0","rgba(255,255,255,"+opacity+")");
 		gradient.addColorStop("1","rgba(255,255,255,0)");
 
 		ctx.strokeStyle = gradient;
@@ -353,6 +401,12 @@ function ResizeCanvas(){
 	var canvas = $("#windCanvas");
 	var w = canvas.width();
 	var h = canvas.height();
+	canvas[0].width = w;
+	canvas[0].height = h;
+
+	canvas = $("#fieldCanvas");
+	w = canvas.width();
+	h = canvas.height();
 	canvas[0].width = w;
 	canvas[0].height = h;
 }
